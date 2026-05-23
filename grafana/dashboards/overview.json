@@ -1,0 +1,356 @@
+{
+  "uid": "greenhouse_overview",
+  "title": "GreenhouseBrain — Farm Overview",
+  "description": "Real-time status of the 3 growing zones",
+  "tags": ["greenhouse", "overview", "realtime"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "# GreenhouseBrain — Horticultural Automation System\n**Horticultural Cooperative · 3 Growing Zones · Updates every 30s**"
+      }
+    },
+
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Zone A — Tomato · VWC Status",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 55 },
+              { "color": "blue", "value": 82 }
+            ]
+          },
+          "mappings": [],
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone A (%)\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Zone B — Pepper · VWC Status",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 47 },
+              { "color": "green", "value": 52 },
+              { "color": "blue", "value": 74 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone B (%)\" FROM sensor_readings WHERE zone_id = 'zone_b' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Zone C — Cucumber · VWC Status",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 60 },
+              { "color": "green", "value": 65 },
+              { "color": "blue", "value": 87 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone C (%)\" FROM sensor_readings WHERE zone_id = 'zone_c' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Zone A — Air Temperature (°C)",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 20 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(temp_air) AS \"Air Temp\", AVG(temp_soil) AS \"Soil Temp\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Zone B — Air Temperature (°C)",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(temp_air) AS \"Air Temp\", AVG(temp_soil) AS \"Soil Temp\" FROM sensor_readings WHERE zone_id = 'zone_b' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Zone C — Air Temperature (°C)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(temp_air) AS \"Air Temp\", AVG(temp_soil) AS \"Soil Temp\" FROM sensor_readings WHERE zone_id = 'zone_c' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "💧 Comparative VWC — 3 Zones (%)",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Zone A (Tomato)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Zone B (Pepper)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "Zone C (Cucumber)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "min", "max", "mean"] }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(CASE WHEN zone_id='zone_a' THEN vwc END) AS \"Zone A (Tomato)\", AVG(CASE WHEN zone_id='zone_b' THEN vwc END) AS \"Zone B (Pepper)\", AVG(CASE WHEN zone_id='zone_c' THEN vwc END) AS \"Zone C (Cucumber)\" FROM sensor_readings WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "☀️ Solar Radiation (W/m²)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": { "mode": "fixed", "fixedColor": "yellow" },
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "showPoints": "never", "spanNulls": true }
+        }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(solar_radiation) AS \"Solar Radiation\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 40,
+      "type": "table",
+      "title": "🚨 Active Alerts (last 24h)",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "severity" },
+            "properties": [{
+              "id": "mappings",
+              "value": [
+                { "type": "value", "options": { "CRITICAL": { "text": "🚨 CRITICAL", "color": "red" }, "WARNING": { "text": "⚠️ WARNING", "color": "orange" }, "INFO": { "text": "ℹ️ INFO", "color": "blue" } } }
+              ]
+            }, { "id": "custom.displayMode", "value": "color-background" }]
+          }
+        ]
+      },
+      "options": {
+        "sortBy": [{ "displayName": "time", "desc": true }],
+        "footer": { "show": false }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT time, zone_id, alert_type, severity, ROUND(value::numeric, 2) AS value, ROUND(threshold::numeric, 2) AS threshold, message FROM alerts WHERE time > NOW() - INTERVAL '24 hours' ORDER BY time DESC LIMIT 50",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 50,
+      "type": "timeseries",
+      "title": "💨 Comparative Relative Humidity (%)",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 29 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 30, "max": 100,
+          "custom": { "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }
+        }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(CASE WHEN zone_id='zone_a' THEN humidity_rh END) AS \"Zone A\", AVG(CASE WHEN zone_id='zone_b' THEN humidity_rh END) AS \"Zone B\", AVG(CASE WHEN zone_id='zone_c' THEN humidity_rh END) AS \"Zone C\" FROM sensor_readings WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "🌫️ CO₂ by Zone (ppm)",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 29 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ppm",
+          "custom": { "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }
+        }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('5 minutes', time) AS time, AVG(CASE WHEN zone_id='zone_a' THEN co2_ppm END) AS \"Zone A CO₂\", AVG(CASE WHEN zone_id='zone_b' THEN co2_ppm END) AS \"Zone B CO₂\", AVG(CASE WHEN zone_id='zone_c' THEN co2_ppm END) AS \"Zone C CO₂\" FROM sensor_readings WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    }
+
+  ],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "index": 0,
+  "links": [],
+  "style": "dark"
+}

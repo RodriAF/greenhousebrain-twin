@@ -1,0 +1,272 @@
+version: "3.9"
+
+# ============================================================
+# GreenhouseBrain — Multi-Zone Greenhouse Automation
+# Cooperative Horticulture Stack
+# ============================================================
+
+networks:
+  greenhouse_net:
+    driver: bridge
+
+volumes:
+  timescale_data:
+  grafana_data:
+  mosquitto_data:
+  mosquitto_log:
+
+services:
+
+  # ─────────────────────────────────────────────
+  # MQTT Broker — Mosquitto
+  # ─────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: greenhouse_mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    environment:
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    networks:
+      - greenhouse_net
+    entrypoint: >
+      sh -c "
+      touch /mosquitto/config/mosquitto.passwd &&
+      mosquitto_passwd -b /mosquitto/config/mosquitto.passwd $${MQTT_USER} $${MQTT_PASSWORD} &&
+      chown mosquitto:mosquitto /mosquitto/config/mosquitto.passwd &&
+      chmod 600 /mosquitto/config/mosquitto.passwd &&
+      exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+      "
+    healthcheck:
+      # Ahora el healthcheck usa las credenciales correctas del .env
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-u", "${MQTT_USER}", "-P", "${MQTT_PASSWORD}", "-t", "health", "-m", "ping"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ─────────────────────────────────────────────
+  # Time-Series Database — TimescaleDB
+  # ─────────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: greenhouse_timescaledb
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TIMESCALEDB_TELEMETRY: "off"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - greenhouse_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # ─────────────────────────────────────────────
+  # Observability — Grafana
+  # ─────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:10.4.0
+    container_name: greenhouse_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/overview.json
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource"
+      GF_DS_TIMESCALE_USER: ${GF_DS_TIMESCALE_USER}
+      GF_DS_TIMESCALE_PASSWORD: ${GF_DS_TIMESCALE_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    networks:
+      - greenhouse_net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────
+  # Sensor Simulator — Multi-Zone Greenhouse
+  # ─────────────────────────────────────────────
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: greenhouse_simulator
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER:-greenhouse}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-greenhouse_mqtt}
+      PUBLISH_INTERVAL_SEC: ${PUBLISH_INTERVAL_SEC}
+      SUNRISE_HOUR: ${SUNRISE_HOUR:-7}
+      SUNSET_HOUR: ${SUNSET_HOUR:-20}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      EXTREME_EVENT_PROBABILITY: ${EXTREME_EVENT_PROBABILITY}
+      TIME_SCALE: ${TIME_SCALE}
+      SIM_START_HOUR: ${SIM_START_HOUR}
+
+    networks:
+      - greenhouse_net
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f greenhouse_sim.py || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # Data Processor — MQTT Consumer + TimescaleDB
+  # ─────────────────────────────────────────────
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    container_name: greenhouse_processor
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      LOG_LEVEL: ${LOG_LEVEL}
+    networks:
+      - greenhouse_net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f processor.py || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # Irrigation Controller — Decision Engine
+  # ─────────────────────────────────────────────
+  controller:
+    build:
+      context: ./controller
+      dockerfile: Dockerfile
+    container_name: greenhouse_controller
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER:-greenhouse}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-greenhouse_mqtt}
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-greenhouse}
+      DB_USER: ${POSTGRES_USER:-ghbrain}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-ghbrain_secret}
+      EVAL_INTERVAL_SEC: ${EVAL_INTERVAL_SEC:-300}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Zone A — Tomato thresholds
+      ZONE_A_VWC_MIN: ${ZONE_A_VWC_MIN:-55}
+      ZONE_A_VWC_MAX: ${ZONE_A_VWC_MAX:-80}
+      ZONE_A_TEMP_HEAT: ${ZONE_A_TEMP_HEAT:-30}
+      ZONE_A_TEMP_FROST: ${ZONE_A_TEMP_FROST:-5}
+      ZONE_A_IRRIGATION_START: ${ZONE_A_IRRIGATION_START:-7}
+      ZONE_A_IRRIGATION_END: ${ZONE_A_IRRIGATION_END:-19}
+      # Zone B — Pepper thresholds
+      ZONE_B_VWC_MIN: ${ZONE_B_VWC_MIN:-52}
+      ZONE_B_VWC_MAX: ${ZONE_B_VWC_MAX:-72}
+      ZONE_B_TEMP_HEAT: ${ZONE_B_TEMP_HEAT:-32}
+      ZONE_B_TEMP_FROST: ${ZONE_B_TEMP_FROST:-8}
+      ZONE_B_IRRIGATION_START: ${ZONE_B_IRRIGATION_START:-7}
+      ZONE_B_IRRIGATION_END: ${ZONE_B_IRRIGATION_END:-18}
+      # Zone C — Cucumber thresholds
+      ZONE_C_VWC_MIN: ${ZONE_C_VWC_MIN:-65}
+      ZONE_C_VWC_MAX: ${ZONE_C_VWC_MAX:-85}
+      ZONE_C_TEMP_HEAT: ${ZONE_C_TEMP_HEAT:-33}
+      ZONE_C_TEMP_FROST: ${ZONE_C_TEMP_FROST:-10}
+      ZONE_C_IRRIGATION_START: ${ZONE_C_IRRIGATION_START:-6}
+      ZONE_C_IRRIGATION_END: ${ZONE_C_IRRIGATION_END:-20}
+    networks:
+      - greenhouse_net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f controller.py || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # Alerter — Critical Condition Notifier
+  # ─────────────────────────────────────────────
+  alerter:
+    build:
+      context: ./alerter
+      dockerfile: Dockerfile
+    container_name: greenhouse_alerter
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER:-greenhouse}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-greenhouse_mqtt}
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-greenhouse}
+      DB_USER: ${POSTGRES_USER:-ghbrain}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-ghbrain_secret}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - greenhouse_net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f alerter.py || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

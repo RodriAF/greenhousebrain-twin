@@ -1,0 +1,20 @@
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB
+    type: postgres
+    uid: timescaledb_ds
+    url: timescaledb:5432
+    user: ${GF_DS_TIMESCALE_USER}
+    secureJsonData:
+      password: ${GF_DS_TIMESCALE_PASSWORD}
+    jsonData:
+      database: greenhouse
+      sslmode: disable
+      maxOpenConns: 10
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      postgresVersion: 1500
+      timescaledb: true
+    isDefault: true
+    editable: true

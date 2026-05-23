@@ -1,0 +1,28 @@
+# Secrets
+.env
+mosquitto/config/passwd
+
+# Runtime data
+mosquitto/data/
+mosquitto/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.sql.gz
+*.bak

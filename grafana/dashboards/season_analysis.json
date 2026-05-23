@@ -1,0 +1,246 @@
+{
+  "uid": "greenhouse_season",
+  "title": "GreenhouseBrain — Season Analysis",
+  "description": "Correlations, irrigation frequencies, daily ETo and agronomic analysis of the campaign",
+  "tags": ["greenhouse", "season", "analytics", "agronomics"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Average ETo Last 7 Days (mm/day)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthmm",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 6 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time, AVG(eto_mm) AS \"Mean ETo\" FROM eto_daily WHERE time > NOW() - INTERVAL '7 days' GROUP BY time ORDER BY time",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Days with Alerts (period)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 3 }, { "color": "red", "value": 7 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COUNT(DISTINCT DATE_TRUNC('day', time)) AS \"Days with Alerts\" FROM alerts WHERE $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "🔁 Average Irrigation Frequency/Day (3 zones)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COUNT(*)::float / GREATEST(1, DATE_PART('day', NOW() - MIN(time))) AS \"Irrigations/Day\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "⚠️ % Emergency Irrigations",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 15 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, 100.0 * SUM(CASE WHEN is_emergency THEN 1 ELSE 0 END) / GREATEST(1, COUNT(*)) AS \"% Emergencies\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Daily ETo by Zone (mm/day) — Penman-Monteith FAO-56",
+      "description": "Calculated reference evapotranspiration. High values indicate greater crop water demand.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthmm",
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Zone A (Tomato)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Zone B (Pepper)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "Zone C (Cucumber)" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "sum"] }
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time, AVG(CASE WHEN zone_id='zone_a' THEN eto_mm END) AS \"Zone A (Tomato)\", AVG(CASE WHEN zone_id='zone_b' THEN eto_mm END) AS \"Zone B (Pepper)\", AVG(CASE WHEN zone_id='zone_c' THEN eto_mm END) AS \"Zone C (Cucumber)\" FROM eto_daily WHERE $__timeFilter(time) GROUP BY time ORDER BY time",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 20,
+      "type": "barchart",
+      "title": "Irrigation Frequency by Week and Zone",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Zone A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Zone B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "Zone C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "xField": "week", "stacking": "none", "groupWidth": 0.7 },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT DATE_TRUNC('week', time) AS week, SUM(CASE WHEN zone_id='zone_a' THEN 1 ELSE 0 END) AS \"Zone A\", SUM(CASE WHEN zone_id='zone_b' THEN 1 ELSE 0 END) AS \"Zone B\", SUM(CASE WHEN zone_id='zone_c' THEN 1 ELSE 0 END) AS \"Zone C\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 21,
+      "type": "barchart",
+      "title": "🚨 Alerts by Week and Type",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "FROST_ALERT" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byName", "options": "HEAT_STRESS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "VWC_CRITICAL_LOW" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
+      },
+      "options": { "xField": "week", "stacking": "normal" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT DATE_TRUNC('week', time) AS week, SUM(CASE WHEN alert_type='FROST_ALERT' THEN 1 ELSE 0 END) AS \"FROST_ALERT\", SUM(CASE WHEN alert_type='HEAT_STRESS' THEN 1 ELSE 0 END) AS \"HEAT_STRESS\", SUM(CASE WHEN alert_type='VWC_CRITICAL_LOW' THEN 1 ELSE 0 END) AS \"VWC_CRITICAL_LOW\" FROM alerts WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "🌡️ Daily Maximum Temperature by Zone (°C)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": { "lineWidth": 2, "showPoints": "auto", "spanNulls": false }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('1 day', sr.time) AS time, MAX(CASE WHEN zone_id='zone_a' THEN temp_air END) AS \"Zone A T_max\", MAX(CASE WHEN zone_id='zone_b' THEN temp_air END) AS \"Zone B T_max\", MAX(CASE WHEN zone_id='zone_c' THEN temp_air END) AS \"Zone C T_max\" FROM sensor_readings sr WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "💧 Daily Minimum VWC — Water Stress",
+      "description": "Daily minimum VWC per zone. Low values indicate water stress episodes.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "showPoints": "auto", "spanNulls": false }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Zone A VWC_min" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Zone B VWC_min" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "Zone C VWC_min" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "mean"] } },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT time_bucket('1 day', time) AS time, MIN(CASE WHEN zone_id='zone_a' THEN vwc END) AS \"Zone A VWC_min\", MIN(CASE WHEN zone_id='zone_b' THEN vwc END) AS \"Zone B VWC_min\", MIN(CASE WHEN zone_id='zone_c' THEN vwc END) AS \"Zone C VWC_min\" FROM sensor_readings WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 40,
+      "type": "table",
+      "title": "Agronomic Summary by Zone (full period)",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 28 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "center" } }
+      },
+      "options": { "footer": { "show": false } },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT sr.zone_id AS \"Zone\", sr.crop AS \"Crop\", ROUND(AVG(sr.vwc)::numeric, 1) AS \"Mean VWC (%)\", ROUND(MIN(sr.vwc)::numeric, 1) AS \"Min VWC (%)\", ROUND(AVG(sr.temp_air)::numeric, 1) AS \"Mean Air Temp (°C)\", ROUND(MAX(sr.temp_air)::numeric, 1) AS \"Max Air Temp (°C)\", ROUND(AVG(sr.humidity_rh)::numeric, 1) AS \"Mean RH (%)\", COUNT(DISTINCT DATE_TRUNC('day', sr.time)) AS \"Recorded Days\", (SELECT COUNT(*) FROM irrigation_events ie WHERE ie.zone_id = sr.zone_id AND ie.command = 'IRRIGATION_ON' AND ie.$__timeFilter(time)) AS \"# Irrigations\", (SELECT COUNT(*) FROM alerts a WHERE a.zone_id = sr.zone_id AND a.$__timeFilter(time)) AS \"# Alerts\" FROM sensor_readings sr WHERE $__timeFilter(sr.time) GROUP BY sr.zone_id, sr.crop ORDER BY sr.zone_id",
+        "refId": "A"
+      }]
+    }
+
+  ]
+}

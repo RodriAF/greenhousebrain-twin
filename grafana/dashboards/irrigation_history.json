@@ -1,0 +1,256 @@
+{
+  "uid": "greenhouse_irrigation",
+  "title": "GreenhouseBrain — Irrigation History",
+  "description": "Timeline of irrigation events, water consumption and VWC evolution",
+  "tags": ["greenhouse", "irrigation", "history"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "💧 Total Irrigation Events (period)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Irrigation Events\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "🚨 Emergency Irrigations (night)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Emergencies\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND is_emergency = true AND $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "💦 Estimated Total Litres (period)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "litre",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COALESCE(SUM(liters_est), 0) AS \"Litres\" FROM irrigation_events WHERE $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "⏱️ Average Irrigation Duration (min)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "m", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "teal" } }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "time_series",
+        "rawSql": "SELECT NOW() AS time, COALESCE(AVG(duration_sec) / 60.0, 0) AS \"Mean Duration\" FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND duration_sec IS NOT NULL AND $__timeFilter(time)",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "🍅 Zone A — VWC with Irrigation Events",
+      "description": "The line shows soil moisture. Vertical annotations mark irrigation start/end.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "VWC Zone A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Irrigation ON" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [4, 4] } }, { "id": "custom.lineWidth", "value": 1 }] }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max", "mean"] }
+      },
+      "targets": [
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(vwc) AS \"VWC Zone A\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_a' AND $__timeFilter(time) ORDER BY time",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "🌶️ Zone B — VWC with Irrigation Events",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "VWC Zone B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max", "mean"] } },
+      "targets": [
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(vwc) AS \"VWC Zone B\" FROM sensor_readings WHERE zone_id = 'zone_b' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_b' AND $__timeFilter(time) ORDER BY time",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "🥒 Zone C — VWC with Irrigation Events",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "VWC Zone C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max", "mean"] } },
+      "targets": [
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(vwc) AS \"VWC Zone C\" FROM sensor_readings WHERE zone_id = 'zone_c' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "uid": "timescaledb_ds" },
+          "format": "time_series",
+          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_c' AND $__timeFilter(time) ORDER BY time",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "id": 20,
+      "type": "barchart",
+      "title": "📊 Estimated Litres by Day and Zone",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "litre" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "zone_a" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "displayName", "value": "Zone A (Tomato)" }] },
+          { "matcher": { "id": "byName", "options": "zone_b" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }, { "id": "displayName", "value": "Zone B (Pepper)" }] },
+          { "matcher": { "id": "byName", "options": "zone_c" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }, { "id": "displayName", "value": "Zone C (Cucumber)" }] }
+        ]
+      },
+      "options": {
+        "xField": "day",
+        "stacking": "none",
+        "groupWidth": 0.7
+      },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT DATE_TRUNC('day', time) AS day, zone_id, COALESCE(SUM(liters_est), COUNT(*) * 120) AS liters FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 21,
+      "type": "table",
+      "title": "📋 Controller Decision Log",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left", "width": 100 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "command" },
+            "properties": [{ "id": "mappings", "value": [{ "type": "value", "options": {
+              "IRRIGATION_ON":  { "text": "💧 IRRIGATION ON",  "color": "blue" },
+              "IRRIGATION_OFF": { "text": "🚿 IRRIGATION OFF", "color": "teal" },
+              "VENTILATION_ON": { "text": "💨 VENT ON",        "color": "orange" },
+              "VENTILATION_OFF":{ "text": "🌬️ VENT OFF",       "color": "grey" },
+              "ALERT_CRITICAL": { "text": "🚨 CRITICAL",       "color": "red" }
+            }}]}, { "id": "custom.displayMode", "value": "color-background" }]
+          },
+          { "matcher": { "id": "byName", "options": "is_emergency" },
+            "properties": [{ "id": "mappings", "value": [{ "type": "value", "options": { "true": { "text": "⚠️ YES", "color": "red" }, "false": { "text": "NO", "color": "green" } } }] }]
+          }
+        ]
+      },
+      "options": { "sortBy": [{ "displayName": "time", "desc": true }] },
+      "targets": [{
+        "datasource": { "uid": "timescaledb_ds" },
+        "format": "table",
+        "rawSql": "SELECT time, zone_id, command, ROUND(vwc_at_trigger::numeric, 1) AS vwc_pct, is_emergency, LEFT(reason, 80) AS reason FROM irrigation_events WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 100",
+        "refId": "A"
+      }]
+    }
+
+  ]
+}
