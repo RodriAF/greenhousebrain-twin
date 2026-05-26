@@ -171,7 +171,7 @@ Continuous aggregates pre-compute hourly and daily rollups, making Grafana queri
 ### 1. Clone and configure
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/RodriAF/greenhousebrain-twin.git
 cd greenhousebrain-twin
 
 # Create environment file and edit credentials and thresholds
