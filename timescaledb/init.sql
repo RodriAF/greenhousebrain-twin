@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
 SELECT create_hypertable(
     'sensor_readings',
     'time',
-    chunk_time_interval => INTERVAL '7 days',
+    chunk_time_interval => INTERVAL '1 day',
     if_not_exists => TRUE
 );
 
@@ -43,11 +43,11 @@ ALTER TABLE sensor_readings SET (
 );
 
 -- Compression policy: compress chunks older than 30 days
-SELECT add_compression_policy('sensor_readings', INTERVAL '30 days');
+-- SELECT add_compression_policy('sensor_readings', INTERVAL '30 days');
 
 -- Retention policy: drop data older than 2 years
-SELECT add_retention_policy('sensor_readings', INTERVAL '2 years');
-
+-- SELECT add_retention_policy('sensor_readings', INTERVAL '2 years');
+SELECT add_retention_policy('sensor_readings', INTERVAL '4 days', if_not_exists => TRUE);
 
 -- ─────────────────────────────────────────────────────────────
 -- IRRIGATION EVENTS — Commands issued by the controller
@@ -67,9 +67,10 @@ CREATE TABLE IF NOT EXISTS irrigation_events (
 SELECT create_hypertable(
     'irrigation_events',
     'time',
-    chunk_time_interval => INTERVAL '30 days',
+    chunk_time_interval => INTERVAL '1 day',
     if_not_exists => TRUE
 );
+SELECT add_retention_policy('irrigation_events', INTERVAL '4 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_irrigation_zone_time
     ON irrigation_events (zone_id, time DESC);
@@ -97,9 +98,10 @@ CREATE TABLE IF NOT EXISTS alerts (
 SELECT create_hypertable(
     'alerts',
     'time',
-    chunk_time_interval => INTERVAL '30 days',
+    chunk_time_interval => INTERVAL '1 day',
     if_not_exists => TRUE
 );
+SELECT add_retention_policy('alerts', INTERVAL '4 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_zone_time
     ON alerts (zone_id, time DESC);
@@ -125,7 +127,7 @@ CREATE TABLE IF NOT EXISTS eto_daily (
 SELECT create_hypertable(
     'eto_daily',
     'time',
-    chunk_time_interval => INTERVAL '90 days',
+    chunk_time_interval => INTERVAL '4 days',
     if_not_exists => TRUE
 );
 
