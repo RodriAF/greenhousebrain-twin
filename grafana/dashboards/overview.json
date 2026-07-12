@@ -7,7 +7,7 @@
   "schemaVersion": 38,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-5y", "to": "now+5y" },
+  "time": { "from": "now-3d", "to": "now" },
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "panels": [
@@ -57,7 +57,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT time, vwc AS \"VWC Zone A (%)\" FROM sensor_readings WHERE zone_id = 'zone_a' ORDER BY time DESC LIMIT 1",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone A (%)\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
         "refId": "A"
       }]
     },
@@ -93,7 +93,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT time, vwc AS \"VWC Zone B (%)\" FROM sensor_readings WHERE zone_id = 'zone_b' ORDER BY time DESC LIMIT 1",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone B (%)\" FROM sensor_readings WHERE zone_id = 'zone_b' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
         "refId": "A"
       }]
     },
@@ -129,7 +129,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT time, vwc AS \"VWC Zone C (%)\" FROM sensor_readings WHERE zone_id = 'zone_c' ORDER BY time DESC LIMIT 1",
+        "rawSql": "SELECT time, vwc AS \"VWC Zone C (%)\" FROM sensor_readings WHERE zone_id = 'zone_c' AND $__timeFilter(time) ORDER BY time DESC LIMIT 1",
         "refId": "A"
       }]
     },
@@ -167,7 +167,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_a' AND bucket > (SELECT MAX(bucket) FROM sensor_hourly WHERE zone_id = 'zone_a') - INTERVAL '3 days' ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_a' AND $__timeFilter(bucket) ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -192,7 +192,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_b' AND bucket > (SELECT MAX(bucket) FROM sensor_hourly WHERE zone_id = 'zone_b') - INTERVAL '3 days' ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_b' AND $__timeFilter(bucket) ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -217,7 +217,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_c' AND bucket > (SELECT MAX(bucket) FROM sensor_hourly WHERE zone_id = 'zone_c') - INTERVAL '3 days' ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, temp_air_avg AS \"Air Temp\" FROM sensor_hourly WHERE zone_id = 'zone_c' AND $__timeFilter(bucket) ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -246,7 +246,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN vwc_avg END) AS \"Zone A (Tomato)\", AVG(CASE WHEN zone_id='zone_b' THEN vwc_avg END) AS \"Zone B (Pepper)\", AVG(CASE WHEN zone_id='zone_c' THEN vwc_avg END) AS \"Zone C (Cucumber)\" FROM sensor_hourly WHERE bucket > (SELECT MAX(bucket) FROM sensor_hourly) - INTERVAL '3 days' GROUP BY 1 ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN vwc_avg END) AS \"Zone A (Tomato)\", AVG(CASE WHEN zone_id='zone_b' THEN vwc_avg END) AS \"Zone B (Pepper)\", AVG(CASE WHEN zone_id='zone_c' THEN vwc_avg END) AS \"Zone C (Cucumber)\" FROM sensor_hourly WHERE $__timeFilter(bucket) GROUP BY 1 ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -267,7 +267,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, radiation_avg AS \"Solar Radiation\" FROM sensor_hourly WHERE zone_id = 'zone_a' AND bucket > (SELECT MAX(bucket) FROM sensor_hourly WHERE zone_id = 'zone_a') - INTERVAL '3 days' ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, radiation_avg AS \"Solar Radiation\" FROM sensor_hourly WHERE zone_id = 'zone_a' AND $__timeFilter(bucket) ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -299,7 +299,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "table",
-        "rawSql": "SELECT time, zone_id, alert_type, severity, ROUND(value::numeric, 2) AS value, ROUND(threshold::numeric, 2) AS threshold, message FROM alerts WHERE time > (SELECT MAX(time) FROM alerts) - INTERVAL '3 days' ORDER BY time DESC LIMIT 50",
+        "rawSql": "SELECT time, zone_id, alert_type, severity, ROUND(value::numeric, 2) AS value, ROUND(threshold::numeric, 2) AS threshold, message FROM alerts WHERE time > NOW() - INTERVAL '24 hours' ORDER BY time DESC LIMIT 50",
         "refId": "A"
       }]
     },
@@ -320,7 +320,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN humidity_avg END) AS \"Zone A\", AVG(CASE WHEN zone_id='zone_b' THEN humidity_avg END) AS \"Zone B\", AVG(CASE WHEN zone_id='zone_c' THEN humidity_avg END) AS \"Zone C\" FROM sensor_hourly WHERE bucket > (SELECT MAX(bucket) FROM sensor_hourly) - INTERVAL '3 days' GROUP BY 1 ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN humidity_avg END) AS \"Zone A\", AVG(CASE WHEN zone_id='zone_b' THEN humidity_avg END) AS \"Zone B\", AVG(CASE WHEN zone_id='zone_c' THEN humidity_avg END) AS \"Zone C\" FROM sensor_hourly WHERE $__timeFilter(bucket) GROUP BY 1 ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -340,7 +340,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "time_series",
-        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN co2_avg END) AS \"Zone A CO₂\", AVG(CASE WHEN zone_id='zone_b' THEN co2_avg END) AS \"Zone B CO₂\", AVG(CASE WHEN zone_id='zone_c' THEN co2_avg END) AS \"Zone C CO₂\" FROM sensor_hourly WHERE bucket > (SELECT MAX(bucket) FROM sensor_hourly) - INTERVAL '3 days' GROUP BY 1 ORDER BY 1",
+        "rawSql": "SELECT bucket AS time, AVG(CASE WHEN zone_id='zone_a' THEN co2_avg END) AS \"Zone A CO₂\", AVG(CASE WHEN zone_id='zone_b' THEN co2_avg END) AS \"Zone B CO₂\", AVG(CASE WHEN zone_id='zone_c' THEN co2_avg END) AS \"Zone C CO₂\" FROM sensor_hourly WHERE $__timeFilter(bucket) GROUP BY 1 ORDER BY 1",
         "refId": "A"
       }]
     }
