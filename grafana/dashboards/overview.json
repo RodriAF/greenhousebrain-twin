@@ -7,7 +7,7 @@
   "schemaVersion": 38,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-80m", "to": "now" },
+  "time": { "from": "now-5y", "to": "now+5y" },
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "panels": [
