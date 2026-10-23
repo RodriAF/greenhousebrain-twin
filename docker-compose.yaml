@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ============================================================
 # GreenhouseBrain — Multi-Zone Greenhouse Automation
 # Cooperative Horticulture Stack
@@ -146,7 +144,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       EXTREME_EVENT_PROBABILITY: ${EXTREME_EVENT_PROBABILITY}
       TIME_SCALE: ${TIME_SCALE}
-      SIM_START_HOUR: ${SIM_START_HOUR}
+      SIM_START_DAYS_AGO: ${SIM_START_DAYS_AGO}
 
     networks:
       - greenhouse_net
@@ -211,7 +209,7 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      EVAL_INTERVAL_SEC: ${EVAL_INTERVAL_SEC}
+      IRRIGATION_MAX_MINUTES: ${IRRIGATION_MAX_MINUTES}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Zone A — Tomato thresholds
       ZONE_A_VWC_MIN: ${ZONE_A_VWC_MIN}
@@ -265,7 +263,7 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-ghbrain_secret}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}

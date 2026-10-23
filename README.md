@@ -48,9 +48,9 @@ This approach creates three recurring problems:
 │  └──────┬──────┘                             └────────┬─────────┘   │
 │         │                                             │             │
 │         │ SQL INSERT                     all topics   │             │
-│         │ (irrigation_events,            (sensors +   │             │
-│         │  alerts)                      commands +    │             │
-│         │                                alerts)      │             │
+│         │ (decisions + alerts)           (subscribed; │             │
+│         │                                only sensors │             │
+│         │                                are stored)  │             │
 │         │                                             ▼             │
 │         │                                   ┌──────────────────┐    │
 │         │                                   │    Processor     │    │
@@ -80,6 +80,14 @@ This approach creates three recurring problems:
   ◄──  subscribe
 ```
 
+**Data flow notes**
+
+- The *Controller* is event-driven: it evaluates a zone every time a sensor reading arrives and is the only writer of `irrigation_events` and of its own alerts (frost, VWC, sensor offline, heat stress, ineffective irrigation).
+- The *Processor* validates every message but only **stores sensor readings** (and computes ETo); commands and controller alerts are observed, not re-inserted.
+- A single simulation clock timestamps every message: data is never dated in the future, and after the optional catch-up (`SIM_START_DAYS_AGO` + `TIME_SCALE`) the clock follows real time.
+- A VWC reading `<= 1 %` is treated as a disconnected probe: the controller ignores it and raises `SENSOR_OFFLINE` instead of irrigating.
+
+
 All services communicate exclusively through MQTT topics. No service has direct knowledge of another — the broker is the sole integration point.
 
 ---
@@ -94,7 +102,7 @@ Generates physically realistic multi-zone telemetry without requiring hardware. 
 - Evapotranspiration drain proportional to radiation and air temperature, weighted by FAO-56 crop coefficient (Kc)
 - VWC recovery on irrigation command receipt — closes the control loop without hardware
 - Probabilistic extreme weather events: heat waves, cold snaps, drought spikes, storm fronts, sensor failures
-- Time acceleration via `TIME_SCALE` (up to 288x real time for compressed demos)
+- Backfill via `SIM_START_DAYS_AGO` + `TIME_SCALE`: starts in the past, catches up fast, then runs in real time
 
 | Zone | Crop | Scientific Name |
 |------|------|-----------------|
@@ -115,7 +123,7 @@ MQTT consumer that validates, transforms, and persists all incoming messages.
 
 Stateful decision engine that evaluates zone conditions on a configurable interval and issues actuator commands.
 
-Decision logic per zone (evaluated every `EVAL_INTERVAL_SEC`, default 5 minutes):
+Decision logic per zone (evaluated on every sensor reading received):
 
 1. VWC below minimum threshold within irrigation window → `IRRIGATION_ON`
 2. VWC below minimum threshold outside irrigation window → `IRRIGATION_ON` (emergency, `is_emergency=True`) + `VWC_CRITICAL_LOW` alert
@@ -150,9 +158,9 @@ All time-series tables are TimescaleDB hypertables. Compression and retention po
 
 | Table | Partition | Compression | Retention |
 |-------|-----------|-------------|-----------|
-| `sensor_readings` | 7-day chunks | After 30 days | 2 years |
-| `irrigation_events` | 30-day chunks | — | — |
-| `alerts` | 30-day chunks | — | — |
+| `sensor_readings` | 1-day chunks | — | 60 days |
+| `irrigation_events` | 1-day chunks | — | 60 days |
+| `alerts` | 1-day chunks | — | 60 days |
 | `eto_daily` | 90-day chunks | — | — |
 
 Continuous aggregates pre-compute hourly and daily rollups, making Grafana queries fast regardless of raw data volume.
@@ -184,14 +192,14 @@ cp example.env .env
 
 No hardware required. The stack includes a sensor simulator that generates
 realistic telemetry for all three zones out of the box. By default it runs
-at `TIME_SCALE=60` — one simulated day every 24 real minutes — so you will
+starting 4 days in the past and catching up at `TIME_SCALE=120`, then in real time — so you will
 see irrigation decisions and alerts within the first few minutes.
 
 ```bash
 # In .env, these three control the simulation:
-TIME_SCALE=60            # 1 simulated day every 24 real minutes
-SIM_START_HOUR=7         # Start the clock at 07:00 (sunrise)
-PUBLISH_INTERVAL_SEC=30  # Publish sensor readings every 30s
+SIM_START_DAYS_AGO=4     # Start 4 days in the past (history for the demo)
+TIME_SCALE=120           # Catch-up speed; switches to real time on reaching now
+PUBLISH_INTERVAL_SEC=300 # One reading every 5 min of data-time
 ```
 
 ### 2. Launch the stack
@@ -263,9 +271,10 @@ All parameters are injected via environment variables. See `example.env` for the
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TIME_SCALE` | `1.0` | Simulation speed multiplier |
-| `PUBLISH_INTERVAL_SEC` | `120` | Sensor publish cadence (seconds) |
-| `EVAL_INTERVAL_SEC` | `300` | Controller evaluation cadence (seconds) |
+| `TIME_SCALE` | `1.0` | Catch-up speed multiplier (real time afterwards) |
+| `SIM_START_DAYS_AGO` | `0` | Days of history to generate at startup |
+| `PUBLISH_INTERVAL_SEC` | `600` | Seconds of data-time between readings |
+| `IRRIGATION_MAX_MINUTES` | `180` | Warn if irrigating this long without VWC recovering |
 | `EXTREME_EVENT_PROBABILITY` | `0.02` | Per-tick probability of a weather event |
 | `ALERT_COOLDOWN_MINUTES` | `30` | Alert deduplication window |
 | `ALTITUDE_M` | `50.0` | Site altitude for ETo psychrometric constant |

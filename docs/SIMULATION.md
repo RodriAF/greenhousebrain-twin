@@ -6,24 +6,27 @@ The simulator replaces physical sensors entirely — no hardware required. All b
 ## Minimum setup
 
 ```bash
-# In .env, these three control the simulation:
-TIME_SCALE=60            # 1 simulated day every 24 real minutes
-SIM_START_HOUR=7         # Start the clock at 07:00 (sunrise)
-PUBLISH_INTERVAL_SEC=30  # Publish sensor readings every 30s
+# In .env, these control the simulation clock:
+SIM_START_DAYS_AGO=4         # Start 4 days in the past -> the demo already has history
+TIME_SCALE=120               # Catch-up speed (120 = 2 h of data per real minute)
+PUBLISH_INTERVAL_SEC=300     # One reading every 5 minutes of data-time
 ```
 
-## Time acceleration
+## Simulation clock
 
-`TIME_SCALE` compresses simulated time. The simulator advances its internal clock by `(PUBLISH_INTERVAL_SEC / 60) × TIME_SCALE` minutes on every tick.
+There is a **single clock** and data is never stamped in the future:
 
-| `TIME_SCALE` | 1 simulated day takes | Good for |
-|---|---|---|
-| `1` | 24 hours | Hardware replacement / real deployment |
-| `12` | 2 hours | Integration testing |
-| `60` | 24 minutes | Dashboard demos |
-| `288` | 5 minutes | Stress-testing alerts and controller logic |
+1. The simulator starts at `now − SIM_START_DAYS_AGO` and publishes one reading every `PUBLISH_INTERVAL_SEC` of data-time.
+2. While the clock is behind the wall clock (*catch-up*), it runs `TIME_SCALE` times faster than real time (one reading every `PUBLISH_INTERVAL_SEC / TIME_SCALE` real seconds).
+3. When it reaches "now" it switches automatically to real time: the newest reading always carries the current time.
 
-`SIM_START_HOUR` pins the starting hour of the simulated clock (0–23). Setting it to `7` means the simulation begins at sunrise — irrigation decisions and solar radiation changes are visible within the first few real minutes.
+| Setting | Catch-up of 4 days takes |
+|---|---|
+| `TIME_SCALE=1` | 4 days (no backfill, real time only) |
+| `TIME_SCALE=120` | ~48 minutes |
+| `TIME_SCALE=720` | ~8 minutes |
+
+Once the backfill is not needed any more, set `TIME_SCALE=1` and `SIM_START_DAYS_AGO=0`.
 
 ## Solar cycle
 
@@ -38,7 +41,7 @@ SUNRISE_HOUR=8   # Almería, winter
 
 ## Extreme Weather Events
 
-Triggered probabilistically each tick via `EXTREME_EVENT_PROBABILITY`. Only one event
+Triggered probabilistically via `EXTREME_EVENT_PROBABILITY` (probability per zone and per simulated hour). Only one event
 can be active per zone at a time.
 
 | Event | Temp delta | Radiation | ET drain | RH delta | Notes |
@@ -46,16 +49,16 @@ can be active per zone at a time.
 | `HEAT_WAVE` | +12°C | ×1.4 | ×2.0 | −20% | Triggers HEAT_STRESS + rapid VWC drain |
 | `COLD_SNAP` | −15°C | ×0.0 | ×1.0 | +15% | Triggers FROST_ALERT immediately |
 | `DROUGHT_SPIKE` | — | ×1.0 | ×3.0 | −15% | VWC drops to threshold in a few ticks |
-| `SENSOR_FAILURE` | — | — | — | — | Forces VWC to 0% (disconnected sensor) |
+| `SENSOR_FAILURE` | — | — | — | — | Probe reports 0% VWC; real soil moisture is unaffected. Controller ignores it and raises `SENSOR_OFFLINE` |
 | `STORM_FRONT` | −4°C | ×0.05 | ×1.0 | +25% | Non-critical; visible in radiation chart |
 
 
 ```bash
-EXTREME_EVENT_PROBABILITY=0.02   # 2% per tick — realistic background rate
-EXTREME_EVENT_PROBABILITY=0.15   # 15% per tick — useful for demos and testing
+EXTREME_EVENT_PROBABILITY=0.02   # per simulated hour — about one event per day across the 3 zones
+EXTREME_EVENT_PROBABILITY=0.10   # useful for demos and testing alerts
 ```
 
-At `TIME_SCALE=60` and `PUBLISH_INTERVAL_SEC=30`, each tick represents 30 simulated minutes. A `HEAT_WAVE` with `ticks=4` therefore lasts 2 simulated hours.
+Event durations are defined for 30-minute ticks and converted automatically to `PUBLISH_INTERVAL_SEC`, so a `HEAT_WAVE` always lasts 2 hours of data-time.
 
 ## What the simulator publishes
 
@@ -81,4 +84,4 @@ Every tick, one JSON payload per zone is published to `greenhouse/{zone_id}/sens
 
 The simulator also subscribes to `greenhouse/{zone_id}/commands` and updates its internal actuator state when the controller sends `IRRIGATION_ON`, `IRRIGATION_OFF`, `VENTILATION_ON`, or `VENTILATION_OFF` — closing the control loop without any physical hardware.
 
----
+---

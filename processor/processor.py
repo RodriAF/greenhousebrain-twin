@@ -397,14 +397,19 @@ def on_message(client, userdata, msg):
             except ValidationError as e:
                 log.warning("[WARNING]: Invalid command payload — discarded: %s", e)
                 return
-            insert_command_event(payload)
-            log.debug("[SAVED]: Command event persisted: %s", payload.get("command"))
+            # Commands are persisted by the controller itself (it also stores VWC,
+            # temperature and the justification), so no insert here -> no duplicates.
+            log.debug("[SEEN]: Command observed: %s", payload.get("command"))
 
         elif topic == "greenhouse/alerts":
             try:
                 AlertPayload.model_validate(payload)
             except ValidationError as e:
                 log.warning("[WARNING]: Invalid alert payload — discarded: %s", e)
+                return
+            if payload.get("source") == "controller":
+                # Already persisted by the controller; skip to avoid duplicate rows.
+                log.debug("[SEEN]: Controller alert already persisted: %s", payload.get("alert_type"))
                 return
             insert_alert(payload)
             log.info("[ALERT]: Alert persisted: [%s] %s",

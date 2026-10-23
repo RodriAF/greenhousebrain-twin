@@ -45,9 +45,8 @@ ALTER TABLE sensor_readings SET (
 -- Compression policy: compress chunks older than 30 days
 -- SELECT add_compression_policy('sensor_readings', INTERVAL '30 days');
 
--- Retention policy: drop data older than 2 years
--- SELECT add_retention_policy('sensor_readings', INTERVAL '2 years');
-SELECT add_retention_policy('sensor_readings', INTERVAL '4 days', if_not_exists => TRUE);
+-- Retention policy: keep the last 60 days (portfolio demo: ~2 months of history)
+SELECT add_retention_policy('sensor_readings', INTERVAL '60 days', if_not_exists => TRUE);
 
 -- ─────────────────────────────────────────────────────────────
 -- IRRIGATION EVENTS — Commands issued by the controller
@@ -70,7 +69,7 @@ SELECT create_hypertable(
     chunk_time_interval => INTERVAL '1 day',
     if_not_exists => TRUE
 );
-SELECT add_retention_policy('irrigation_events', INTERVAL '4 days', if_not_exists => TRUE);
+SELECT add_retention_policy('irrigation_events', INTERVAL '60 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_irrigation_zone_time
     ON irrigation_events (zone_id, time DESC);
@@ -101,7 +100,7 @@ SELECT create_hypertable(
     chunk_time_interval => INTERVAL '1 day',
     if_not_exists => TRUE
 );
-SELECT add_retention_policy('alerts', INTERVAL '4 days', if_not_exists => TRUE);
+SELECT add_retention_policy('alerts', INTERVAL '60 days', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_zone_time
     ON alerts (zone_id, time DESC);
@@ -158,7 +157,7 @@ WITH NO DATA;
 -- Refresh policy: update hourly aggregate every 30 minutes
 SELECT add_continuous_aggregate_policy(
     'sensor_hourly',
-    start_offset  => INTERVAL '3 hours',
+    start_offset  => INTERVAL '7 days',   -- covers the initial backfill (SIM_START_DAYS_AGO)
     end_offset    => INTERVAL '1 minute',
     schedule_interval => INTERVAL '30 minutes',
     if_not_exists => TRUE
@@ -186,7 +185,7 @@ WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
     'sensor_daily',
-    start_offset  => INTERVAL '3 days',
+    start_offset  => INTERVAL '7 days',   -- covers the initial backfill (SIM_START_DAYS_AGO)
     end_offset    => INTERVAL '1 hour',
     schedule_interval => INTERVAL '1 hour',
     if_not_exists => TRUE

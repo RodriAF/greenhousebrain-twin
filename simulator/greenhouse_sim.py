@@ -209,7 +209,7 @@ class ExtremeEvent:
         self.radiation_factor = radiation_factor
         self.vwc_drain_factor = vwc_drain_factor  # multiplies ET drainage
         self.rh_delta = rh_delta
-        self.force_vwc = force_vwc                # overrides VWC (sensor failure)
+        self.force_vwc = force_vwc                # overrides the REPORTED VWC only (sensor failure)
 
     @property
     def active(self) -> bool:
@@ -227,13 +227,14 @@ EVENT_CATALOG = [
     lambda: ExtremeEvent("COLD_SNAP",      ticks=3, temp_delta=-15.0, radiation_factor=0.0, rh_delta=+15.0),
     # Flash drought: ET x3 without temperature change — VWC drops to threshold in few ticks
     lambda: ExtremeEvent("DROUGHT_SPIKE",  ticks=5, vwc_drain_factor=3.0, rh_delta=-15.0),
-    # Sensor failure: VWC reports 0% (sensor disconnected or extreme dry)
+    # Sensor failure: the probe reports 0% (real soil moisture is NOT affected)
     lambda: ExtremeEvent("SENSOR_FAILURE", ticks=3, force_vwc=0.0),
     # Storm: total cloud cover, high humidity, low temperature — non-critical but visible
     lambda: ExtremeEvent("STORM_FRONT",    ticks=4, temp_delta=-4.0, radiation_factor=0.05, rh_delta=+25.0),
 ]
 
-# Probability of an event starting on each tick (2%)
+# Probability of an event starting, per zone and per SIMULATED HOUR (2 %).
+# Converted to a per-tick probability in maybe_trigger_event().
 EVENT_PROBABILITY = float(os.getenv("EXTREME_EVENT_PROBABILITY", 0.02))
 # Base tick duration (can be reduced for demos)
 EVENT_TICK_SCALE  = float(os.getenv("EXTREME_EVENT_TICK_SCALE", 1.0))
@@ -248,11 +249,14 @@ def maybe_trigger_event(zone_id: str) -> None:
     """Randomly decides whether to start a new extreme event in the zone."""
     if _active_events[zone_id] is not None:
         return  # one is already active, do not stack
-    if random.random() < EVENT_PROBABILITY:
+    p_tick = 1.0 - (1.0 - EVENT_PROBABILITY) ** (PUBLISH_INTERVAL / 3600.0)
+    if random.random() < p_tick:
         factory = random.choice(EVENT_CATALOG)
         event = factory()
-        # Scale duration for fast-paced demos
-        event.ticks_remaining = max(1, int(event.ticks_remaining * EVENT_TICK_SCALE))
+        # Catalog durations were written for 30-minute ticks -> convert to the
+        # real step so an event lasts the same amount of data-time.
+        event.ticks_remaining = max(
+            1, round(event.ticks_remaining * (1800.0 / PUBLISH_INTERVAL) * EVENT_TICK_SCALE))
         _active_events[zone_id] = event
         log.warning(
             "[WARNING]: [%s] EXTREME EVENT STARTED: %s (%d ticks)",
@@ -376,8 +380,14 @@ def simulate_co2(zone: ZoneConfig, radiation: float, hour: float) -> float:
     return round(max(350.0, min(1200.0, base + noise)), 1)
 
 
+# The ET coefficients in ZoneConfig were tuned for a 30 s tick treated as
+# "0.5 min". Now that dt is the real data-time step, they are rescaled once here
+# (1/60) so that daily ET is realistic (~10-15 % VWC per sunny day).
+ET_COEFF_SCALE = 1.0 / 60.0
+
+
 def update_vwc(zone: ZoneConfig, radiation: float, air_temp: float,
-               dt_minutes: float) -> None:
+               dt_minutes: float, et_factor: float = 1.0) -> None:
     """
     Updates zone.vwc in-place using a simplified ET model.
 
@@ -390,7 +400,7 @@ def update_vwc(zone: ZoneConfig, radiation: float, air_temp: float,
     et_drain = zone.kc * (
         zone.et_radiation_coeff * radiation
         + zone.et_temp_coeff * max(0.0, air_temp - 20.0)
-    ) * dt_minutes
+    ) * ET_COEFF_SCALE * et_factor * dt_minutes
 
     # Add soil drainage/percolation noise
     percolation = random.gauss(0, 0.05)
@@ -411,36 +421,24 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", "greenhouse")
 MQTT_PASS = os.getenv("MQTT_PASSWORD", "greenhouse_mqtt")
 
-# Time Acceleration
-# TIME_SCALE=1   — real-time (default)
-# TIME_SCALE=12  — 1 real hour = 12 simulated hours (1 day in 2h)
-# TIME_SCALE=60  — 1 real hour = 1 simulated day   (1 day in 24min)
-# TIME_SCALE=288 — 1 real hour = 12 simulated days  (1 day in 5min)
-TIME_SCALE = float(os.getenv("TIME_SCALE", 1.0))
+# Simulation clock (single clock: the data timestamp is NEVER in the future)
+#
+# PUBLISH_INTERVAL_SEC : data-time between two readings (seconds). In real-time
+#                        mode this is also the real wait between readings.
+# SIM_START_DAYS_AGO   : the simulation starts this many days in the past, so a
+#                        fresh deployment already has history to show.
+# TIME_SCALE           : speed of the CATCH-UP phase only (start -> now).
+#                        TIME_SCALE=120 -> 1 reading every PUBLISH_INTERVAL/120 s.
+#                        Once the simulated clock reaches the wall clock, the
+#                        simulator runs in real time (TIME_SCALE no longer applies)
+#                        and the last reading always carries the current time.
+TIME_SCALE         = max(1.0, float(os.getenv("TIME_SCALE", 1.0)))
+SIM_START_DAYS_AGO = float(os.getenv("SIM_START_DAYS_AGO", 0))
+PUBLISH_INTERVAL   = int(os.getenv("PUBLISH_INTERVAL_SEC", 600))
+STEP = timedelta(seconds=PUBLISH_INTERVAL)
 
-_SIM_WALL_START = datetime.now(timezone.utc)
-
-# Allows starting from a specific simulated time, e.g. "07:00 today"
-# SIM_START_HOUR=7 starts the cycle at 7 AM (sunrise)
-# If SIM_START_HOUR is undefined — use the current real-world time
-_SIM_START_HOUR = os.getenv("SIM_START_HOUR")
-if _SIM_START_HOUR is not None:
-    _today = datetime.now(timezone.utc).replace(
-        hour=int(_SIM_START_HOUR), minute=0, second=0, microsecond=0
-    )
-    _SIM_TIME_START = _today
-else:
-    _SIM_TIME_START = datetime.now(timezone.utc)
-
-
-def sim_now() -> datetime:
-    """Returns the current simulated datetime, accelerated by TIME_SCALE."""
-    elapsed_real = datetime.now(timezone.utc) - _SIM_WALL_START
-    elapsed_sim  = elapsed_real * TIME_SCALE
-    return _SIM_TIME_START + elapsed_sim
-
-
-PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL_SEC", 120))
+_SIM_TIME_START = (datetime.now(timezone.utc) - timedelta(days=SIM_START_DAYS_AGO)
+                   ).replace(microsecond=0)
 
 _mqtt_client: Optional[mqtt.Client] = None
 _running = True
@@ -510,7 +508,9 @@ def get_mqtt_client() -> mqtt.Client:
 # Main Simulation Loop
 def build_payload(zone: ZoneConfig, radiation: float, air_temp: float,
                   soil_temp: float, rh: float, co2: float, ts: datetime,
-                  event_name: Optional[str] = None) -> dict:
+                  event_name: Optional[str] = None,
+                  vwc_override: Optional[float] = None) -> dict:
+    reported_vwc = zone.vwc if vwc_override is None else vwc_override
     return {
         "ts": ts.isoformat(),
         "zone_id": zone.zone_id,
@@ -518,7 +518,7 @@ def build_payload(zone: ZoneConfig, radiation: float, air_temp: float,
         "crop": zone.crop,
         "crop_scientific": zone.crop_scientific,
         "sensors": {
-            "vwc": round(zone.vwc, 2),
+            "vwc": round(reported_vwc, 2),
             "temp_soil": soil_temp,
             "temp_air": air_temp,
             "humidity_rh": rh,
@@ -543,7 +543,7 @@ def simulate_once(client: mqtt.Client, cloud_factor: float,
     """Run one simulation tick for all zones."""
     hour       = tick_time.hour + tick_time.minute / 60.0
     radiation  = solar_radiation(hour, cloud_factor)
-    dt_minutes = PUBLISH_INTERVAL / 60.0
+    dt_minutes = PUBLISH_INTERVAL / 60.0   # data-time minutes elapsed per tick
 
     for zone in ZONES:
         # Extreme weather
@@ -559,18 +559,17 @@ def simulate_once(client: mqtt.Client, cloud_factor: float,
         zone_rad = radiation
         air_temp, zone_rad, rh = apply_event(zone.zone_id, air_temp, zone_rad, rh)
 
-        # Sensor failure overrides VWC directly; otherwise normal ET drain
-        if event and event.force_vwc is not None:
-            zone.vwc = event.force_vwc
-        else:
-            drain_factor = event.vwc_drain_factor if event else 1.0
-            update_vwc(zone, zone_rad, air_temp, dt_minutes * drain_factor)
+        # The soil always follows the normal ET/irrigation model. A SENSOR_FAILURE
+        # only corrupts the REPORTED reading (a broken probe does not dry the soil).
+        drain_factor = event.vwc_drain_factor if event else 1.0
+        update_vwc(zone, zone_rad, air_temp, dt_minutes, et_factor=drain_factor)
+        vwc_override = event.force_vwc if (event and event.force_vwc is not None) else None
 
         advance_event(zone.zone_id)
 
         payload = build_payload(zone, zone_rad, air_temp, soil_temp, rh, co2,
                                 event_name=event.name if event else None,
-                                ts=tick_time)
+                                ts=tick_time, vwc_override=vwc_override)
         topic  = f"greenhouse/{zone.zone_id}/sensors"
         result = client.publish(topic, json.dumps(payload), qos=1, retain=True)
 
@@ -615,39 +614,49 @@ def main():
 
     log.info("[INFO]: GreenhouseBrain Simulator starting...")
     log.info("   Zones: %s", [z.zone_id for z in ZONES])
-    log.info("   Publish interval: %ds", PUBLISH_INTERVAL)
-    log.info("   Sunrise: %sh | Sunset: %sh", SUNRISE_HOUR, SUNSET_HOUR)
-    log.info("   TIME_SCALE: %.0fx  (1 real min = %.1f simulated min)",
-             TIME_SCALE, TIME_SCALE)
+    log.info("   Reading every %ds of data-time | Sunrise: %sh | Sunset: %sh",
+             PUBLISH_INTERVAL, SUNRISE_HOUR, SUNSET_HOUR)
+    log.info("   Start: %s (%.1f days ago) | catch-up TIME_SCALE=%.0fx, then real time",
+             _SIM_TIME_START.isoformat(), SIM_START_DAYS_AGO, TIME_SCALE)
 
     # Wait for broker readiness
     time.sleep(5)
     client = get_mqtt_client()
     time.sleep(2)  # allow on_connect to fire
 
-    _sim_tick_time      = _SIM_TIME_START
-    cloud_factor        = generate_cloud_factor(_sim_tick_time)
-    cloud_update_counter = 0
+    tick_time            = _SIM_TIME_START
+    cloud_factor         = generate_cloud_factor(tick_time)
+    ticks_per_hour       = max(1, int(3600 / PUBLISH_INTERVAL))
+    tick_count           = 0
+    was_catching_up      = True
 
     while _running:
         try:
-            if cloud_update_counter % 15 == 0:
-                cloud_factor = generate_cloud_factor(_sim_tick_time)
+            if tick_count % ticks_per_hour == 0:
+                cloud_factor = generate_cloud_factor(tick_time)
 
-            simulate_once(client, cloud_factor, _sim_tick_time)
-            cloud_update_counter += 1
-
-            # Advance the simulated time cursor by a fixed step
-            _sim_tick_time += timedelta(minutes=(PUBLISH_INTERVAL / 60.0) * TIME_SCALE)
-
+            simulate_once(client, cloud_factor, tick_time)
+            tick_count += 1
         except Exception as e:
             log.error("[ERROR]: Simulation error: %s", e, exc_info=True)
 
+        next_tick = tick_time + STEP
+        now = datetime.now(timezone.utc)
+        if next_tick <= now:
+            # Catch-up phase: the next reading is already in the past -> go fast.
+            pause = max(0.2, PUBLISH_INTERVAL / TIME_SCALE)
+        else:
+            # Real-time phase: wait until the next reading is "now".
+            if was_catching_up:
+                log.info("[INFO]: Simulation caught up with the wall clock — running in real time")
+                was_catching_up = False
+            pause = (next_tick - now).total_seconds()
+        tick_time = next_tick
+
         # Sleep in small increments to remain responsive to SIGTERM
-        elapsed = 0
-        while elapsed < PUBLISH_INTERVAL and _running:
-            time.sleep(1)
-            elapsed += 1
+        end = time.monotonic() + pause
+        while _running and time.monotonic() < end:
+            time.sleep(min(1.0, max(0.0, end - time.monotonic())))
 
     log.info("[STOPPED]: Simulator stopped cleanly.")
     if _mqtt_client:
