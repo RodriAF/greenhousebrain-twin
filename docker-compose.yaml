@@ -40,7 +40,6 @@ services:
       exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
       "
     healthcheck:
-      # Ahora el healthcheck usa las credenciales correctas del .env
       test: ["CMD", "mosquitto_pub", "-h", "localhost", "-u", "${MQTT_USER}", "-P", "${MQTT_PASSWORD}", "-t", "health", "-m", "ping"]
       interval: 60s
       timeout: 5s
@@ -111,18 +110,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-  # ─────────────────────────────────────────────
-  # Cloudflare Tunnel — Conexión Segura Outbound
-  # ─────────────────────────────────────────────
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: greenhouse_tunnel
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${TOKEN_CLOUDFLARE}
-    networks:
-      - greenhouse_net
-    depends_on:
-      - grafana
 
   # ─────────────────────────────────────────────
   # Sensor Simulator — Multi-Zone Greenhouse
