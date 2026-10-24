@@ -106,7 +106,7 @@
         },
         "overrides": [
           { "matcher": { "id": "byName", "options": "VWC Zone A" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
-          { "matcher": { "id": "byName", "options": "Irrigation ON" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [4, 4] } }, { "id": "custom.lineWidth", "value": 1 }] }
+          { "matcher": { "id": "byName", "options": "Irrigation ON" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "custom.lineInterpolation", "value": "stepAfter" }, { "id": "custom.fillOpacity", "value": 25 }, { "id": "custom.lineWidth", "value": 1 }] }
         ]
       },
       "options": {
@@ -123,7 +123,7 @@
         {
           "datasource": { "uid": "timescaledb_ds" },
           "format": "time_series",
-          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_a' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, MAX(CASE WHEN raw_payload->'actuators'->>'irrigating' = 'true' THEN 100 ELSE 0 END) AS \"Irrigation ON\" FROM sensor_readings WHERE zone_id = 'zone_a' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
           "refId": "B"
         }
       ]
@@ -141,7 +141,8 @@
           "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "VWC Zone B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+          { "matcher": { "id": "byName", "options": "VWC Zone B" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "Irrigation ON" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "custom.lineInterpolation", "value": "stepAfter" }, { "id": "custom.fillOpacity", "value": 25 }, { "id": "custom.lineWidth", "value": 1 }] }
         ]
       },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max", "mean"] } },
@@ -155,7 +156,7 @@
         {
           "datasource": { "uid": "timescaledb_ds" },
           "format": "time_series",
-          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_b' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, MAX(CASE WHEN raw_payload->'actuators'->>'irrigating' = 'true' THEN 100 ELSE 0 END) AS \"Irrigation ON\" FROM sensor_readings WHERE zone_id = 'zone_b' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
           "refId": "B"
         }
       ]
@@ -173,7 +174,8 @@
           "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true }
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "VWC Zone C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+          { "matcher": { "id": "byName", "options": "VWC Zone C" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "Irrigation ON" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }, { "id": "custom.lineInterpolation", "value": "stepAfter" }, { "id": "custom.fillOpacity", "value": 25 }, { "id": "custom.lineWidth", "value": 1 }] }
         ]
       },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max", "mean"] } },
@@ -187,7 +189,7 @@
         {
           "datasource": { "uid": "timescaledb_ds" },
           "format": "time_series",
-          "rawSql": "SELECT time, CASE WHEN command = 'IRRIGATION_ON' THEN 100 ELSE 0 END AS \"Irrigation ON\" FROM irrigation_events WHERE zone_id = 'zone_c' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, MAX(CASE WHEN raw_payload->'actuators'->>'irrigating' = 'true' THEN 100 ELSE 0 END) AS \"Irrigation ON\" FROM sensor_readings WHERE zone_id = 'zone_c' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
           "refId": "B"
         }
       ]
