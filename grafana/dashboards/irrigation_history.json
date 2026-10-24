@@ -217,7 +217,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "table",
-        "rawSql": "SELECT DATE_TRUNC('day', time) AS day, zone_id, COALESCE(SUM(liters_est), COUNT(*) * 120) AS liters FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
+        "rawSql": "SELECT to_char(time AT TIME ZONE 'Europe/Madrid', 'YYYY-MM-DD') AS day, COALESCE(SUM(liters_est) FILTER (WHERE zone_id = 'zone_a'), 0) AS zone_a, COALESCE(SUM(liters_est) FILTER (WHERE zone_id = 'zone_b'), 0) AS zone_b, COALESCE(SUM(liters_est) FILTER (WHERE zone_id = 'zone_c'), 0) AS zone_c FROM irrigation_events WHERE command = 'IRRIGATION_ON' AND $__timeFilter(time) GROUP BY 1 ORDER BY 1",
         "refId": "A"
       }]
     },
@@ -229,8 +229,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "datasource": { "type": "postgres", "uid": "timescaledb_ds" },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "left", "width": 100 } },
+        "defaults": { "custom": { "align": "left" } },
         "overrides": [
+          { "matcher": { "id": "byName", "options": "time" }, "properties": [{ "id": "custom.width", "value": 170 }] },
+          { "matcher": { "id": "byName", "options": "zone_id" }, "properties": [{ "id": "custom.width", "value": 90 }] },
+          { "matcher": { "id": "byName", "options": "command" }, "properties": [{ "id": "custom.width", "value": 150 }] },
+          { "matcher": { "id": "byName", "options": "vwc_pct" }, "properties": [{ "id": "custom.width", "value": 80 }] },
+          { "matcher": { "id": "byName", "options": "is_emergency" }, "properties": [{ "id": "custom.width", "value": 110 }] },
+          { "matcher": { "id": "byName", "options": "reason" }, "properties": [{ "id": "custom.width", "value": 700 }] },
           { "matcher": { "id": "byName", "options": "command" },
             "properties": [{ "id": "mappings", "value": [{ "type": "value", "options": {
               "IRRIGATION_ON":  { "text": "💧 IRRIGATION ON",  "color": "blue" },
@@ -249,7 +255,7 @@
       "targets": [{
         "datasource": { "uid": "timescaledb_ds" },
         "format": "table",
-        "rawSql": "SELECT time, zone_id, command, ROUND(vwc_at_trigger::numeric, 1) AS vwc_pct, is_emergency, LEFT(reason, 80) AS reason FROM irrigation_events WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 100",
+        "rawSql": "SELECT time, zone_id, command, ROUND(vwc_at_trigger::numeric, 1) AS vwc_pct, is_emergency, reason FROM irrigation_events WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 100",
         "refId": "A"
       }]
     }
