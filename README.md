@@ -133,7 +133,7 @@ Decision logic per zone (evaluated on every sensor reading received):
 5. Air temperature 2°C below heat threshold while ventilating → `VENTILATION_OFF` (hysteresis)
 6. Air temperature below frost threshold → `FROST_ALERT` (CRITICAL) + `ALERT_CRITICAL` command
 
-All decisions are persisted to `irrigation_events` with a human-readable justification string.
+All decisions are persisted to `irrigation_events` with a human-readable justification string. When irrigation stops, the controller also fills `duration_sec` and `liters_est` on the matching `IRRIGATION_ON` row (litres = minutes × nominal zone flow, 12 / 9 / 15 L/min for zones A / B / C — an estimate, not a measurement).
 
 Robustness details:
 
@@ -149,6 +149,16 @@ Consumes `greenhouse/alerts` and dispatches notifications to configured channels
 - In-process deduplication: same zone + alert type is suppressed for a configurable cooldown (default 30 minutes) to prevent alert fatigue during sustained conditions
 - Channels: stdout/log (always active), Slack-compatible webhook, SMTP email with HTML template
 - Channels activate automatically when the corresponding environment variables are set — no code changes required
+
+### Dashboards (`grafana/dashboards/`)
+
+Provisioned automatically; no manual setup.
+
+| Dashboard | Default range | Content |
+|-----------|---------------|---------|
+| Overview | 3 days | Current VWC per zone, temperature, radiation, humidity, CO₂ and active alerts (hourly continuous aggregate) |
+| Irrigation history | 7 days | VWC per zone with the real irrigation state (taken from the actuator state in each reading), decision log, estimated litres and average duration |
+| Season analysis | 30 days | ETo, irrigation frequency, alerts by type and a per-zone summary (daily aggregate) |
 
 ### Schemas (`processor/schemas.py`)
 
@@ -177,6 +187,8 @@ Continuous aggregates pre-compute hourly and daily rollups, making Grafana queri
 |------|-------------|---------|
 | `sensor_hourly` | 1 hour | Every 30 min (+ real time) |
 | `sensor_daily` | 1 day | Every 1 hour (+ real time) |
+
+`irrigation_events` stores one row per command; on `IRRIGATION_ON` rows, `duration_sec` and `liters_est` are completed when the irrigation ends.
 
 The refresh policies cover the last 7 days. If you generate a longer backfill, run `CALL refresh_continuous_aggregate('sensor_hourly', NULL, now());` (and the same for `sensor_daily`) once it has finished.
 
@@ -226,7 +238,7 @@ docker compose ps
 
 No manual setup needed for the MQTT credentials. The broker container reads `MQTT_USER` and `MQTT_PASSWORD`
 from `.env` at startup and creates the password file automatically via the
-`entrypoint` defined in `docker-compose.yml`. Just make sure both variables
+`entrypoint` defined in `docker-compose.yaml`. Just make sure both variables
 are set in your `.env` before running `docker compose up`.
 
 If you ever need to regenerate the credentials file manually (e.g. after a password change):
@@ -245,7 +257,7 @@ mosquitto_passwd -c mosquitto/config/passwd greenhouse
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | http://localhost:3000 | admin / greenhouse2024 |
+| Grafana | http://localhost:3000 | admin / greenhouse2024 (default; change it for any exposed instance) |
 | MQTT (raw) | localhost:1883 | greenhouse / (from .env) |
 | TimescaleDB | localhost:5432 | ghbrain / (from .env) |
 
@@ -316,6 +328,16 @@ Zone thresholds for all three zones are fully configurable without code changes.
 
 ---
 
+## Known Limitations
+
+- Irrigation windows and the solar cycle are evaluated in UTC, not in local greenhouse time
+- The simulator does not persist its state: after a container restart the soil moisture goes back to its initial values
+- The alerter cooldown uses the real clock, so a long accelerated backfill can trigger notifications for historical alerts (only relevant if a webhook or SMTP is configured)
+- Litres are estimated from nominal flow rates, and crop/ET parameters are simulation parameters, not calibrated values
+- Only complete probe disconnections (VWC ≤ 1 %) are detected as sensor faults; frozen readings or spikes are not
+
+---
+
 ## Scope and Digital-Twin Readiness
 
 What the project demonstrates: telemetry ingestion, validation, configurable control rules, a closed command loop (commands change the readings that follow), traceable decisions and historical monitoring, all without hardware.
@@ -346,7 +368,7 @@ It is a *digital-twin-ready simulation testbed*, not yet a digital twin: there i
 
 - [ ] **Digital twin**: connect real sensors through the same MQTT topics, calibrate the soil/ET model against measurements and use it predictively
 - [ ] **Persist simulator state** across restarts (currently moisture resets to its initial values)
-- [ ] **Irrigation metrics**: store `duration_sec` and `liters_est` on `IRRIGATION_OFF` (the duration and litres panels rely on them)
+- [ ] **Measured water flow**: replace the nominal per-zone flow used for `liters_est` with flow-meter readings
 - [ ] **Alerter**: ignore stale alerts (backfill) and use data time for the cooldown
 - [ ] **Fertigation**: Add EC (electrical conductivity) sensor and nutrient dosing control
 - [ ] **Weather forecast**: Integrate AEMET API to pre-irrigate before high-ET days
