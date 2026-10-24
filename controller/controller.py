@@ -184,6 +184,37 @@ def persist_decision(zone_id: str, command: str, vwc: float, temp: float,
         _db_conn = None  # Force reconnect
 
 
+# Nominal water flow per zone (L/min). Same values the simulator uses; used only to
+# ESTIMATE the litres of each irrigation (a real site would use a flow meter).
+IRRIGATION_LITERS_PER_MIN = {"zone_a": 12.0, "zone_b": 9.0, "zone_c": 15.0}
+
+
+def persist_irrigation_summary(zone_id: str, started: datetime, ended: datetime) -> None:
+    """Fill duration_sec and liters_est on the IRRIGATION_ON row when irrigation stops."""
+    global _db_conn
+    try:
+        duration = max(0.0, (ended - started).total_seconds())
+        liters = duration / 60.0 * IRRIGATION_LITERS_PER_MIN.get(zone_id, 0.0)
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE irrigation_events
+                   SET duration_sec = %s, liters_est = %s
+                 WHERE zone_id = %s AND command = 'IRRIGATION_ON' AND time = %s
+                """,
+                (int(duration), liters, zone_id, started),
+            )
+        conn.commit()
+    except Exception as e:
+        log.error("[ERROR]: Failed to persist irrigation summary: %s", e)
+        try:
+            get_db().rollback()
+        except Exception:
+            pass
+        _db_conn = None  # Force reconnect
+
+
 def persist_alert(zone_id: str, alert_type: str, severity: str,
                   value: float, threshold: float, message: str, sim_ts=None) -> None:
     """Persist critical alert to TimescaleDB."""
@@ -331,6 +362,8 @@ def evaluate_zone(client: mqtt.Client, zone: ZoneThresholds) -> None:
         )
         publish_command(client, zone.zone_id, "IRRIGATION_OFF", reason, sim_ts=sim_ts)
         persist_decision(zone.zone_id, "IRRIGATION_OFF", vwc, temp, reason, sim_ts=sim_ts)
+        if zone.irrigating_since is not None:
+            persist_irrigation_summary(zone.zone_id, zone.irrigating_since, sim_dt)
         zone.irrigating = False
         zone.irrigating_since = None
 

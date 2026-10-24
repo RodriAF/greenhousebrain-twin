@@ -9,13 +9,13 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)
 
-Automated multi-zone greenhouse management system built around an event-driven microservices architecture. Ingests real-time sensor telemetry via MQTT, applies agronomic decision logic per crop zone, persists time-series data to TimescaleDB, and dispatches critical alerts through configurable notification channels. Designed as a production-ready template for precision agriculture IoT deployments.
+Event-driven microservices prototype for multi-zone greenhouse management. Ingests sensor telemetry via MQTT, applies configurable agronomic rules per crop zone, persists time-series data to TimescaleDB, and dispatches critical alerts through configurable notification channels. Telemetry comes from a built-in simulator that follows the same MQTT contract a physical sensor would, so the platform is *digital-twin-ready* (see [Scope](#scope-and-digital-twin-readiness)). It has not been deployed on a real farm and makes no field-result claims.
 
 ---
 
 ## Problem Context
 
-A horticultural cooperative in southeastern Spain operates three greenhouse cultivation zones for tomato, pepper, and cucumber. Until now, **irrigation has been managed manually** — operators visually inspect the substrate and decide when to water based on experience and feel.
+*Reference scenario used to motivate the design.* A horticultural cooperative in southeastern Spain operates three greenhouse cultivation zones for tomato, pepper, and cucumber. Until now, **irrigation has been managed manually** — operators visually inspect the substrate and decide when to water based on experience and feel.
 
 This approach creates three recurring problems:
 
@@ -25,7 +25,7 @@ This approach creates three recurring problems:
 
 3. **No historical record**: Without data, it's impossible to correlate rainfall events, temperature anomalies, or irrigation decisions with yield outcomes. There is no way to optimize the system year over year.
 
-**GreenhouseBrain solves all three** by deploying soil moisture sensors, a rules-based irrigation controller, and a full observability stack with dashboards and alerts.
+**GreenhouseBrain addresses all three in simulation** with soil moisture telemetry, a rules-based irrigation controller, and a full observability stack with dashboards and alerts.
 
 ---
 
@@ -100,8 +100,8 @@ Generates physically realistic multi-zone telemetry without requiring hardware. 
 
 - Diurnal solar cycle using a sinusoidal model (configurable sunrise/sunset)
 - Evapotranspiration drain proportional to radiation and air temperature, weighted by FAO-56 crop coefficient (Kc)
-- VWC recovery on irrigation command receipt — closes the control loop without hardware
-- Probabilistic extreme weather events: heat waves, cold snaps, drought spikes, storm fronts, sensor failures
+- VWC recovery on irrigation command receipt — closes the control loop without hardware; the actuator state (`irrigating`, `ventilation`) is published with every reading
+- Probabilistic extreme weather events: heat waves, cold snaps, drought spikes, storm fronts, sensor failures (a failure only corrupts the *reported* VWC; the real soil moisture keeps evolving)
 - Backfill via `SIM_START_DAYS_AGO` + `TIME_SCALE`: starts in the past, catches up fast, then runs in real time
 
 | Zone | Crop | Scientific Name |
@@ -112,19 +112,20 @@ Generates physically realistic multi-zone telemetry without requiring hardware. 
 
 ### Processor (`processor/`)
 
-MQTT consumer that validates, transforms, and persists all incoming messages.
+MQTT consumer that validates every incoming message and persists sensor telemetry.
 
 - Pydantic v2 schema validation at the ingestion boundary — malformed payloads are discarded with a warning, never written to the database
-- Inserts sensor readings, irrigation events, and alerts into their respective hypertables
+- Inserts sensor readings into `sensor_readings`. Commands and controller alerts are validated but not re-inserted: the controller is their single writer (no duplicate rows)
 - Accumulates intra-day readings per zone and computes reference evapotranspiration (ETo) using the FAO-56 Penman-Monteith equation once a full day of data is available
 - Thread-safe daily accumulator with automatic rollover
 
 ### Controller (`controller/`)
 
-Stateful decision engine that evaluates zone conditions on a configurable interval and issues actuator commands.
+Stateful, event-driven decision engine: it evaluates a zone every time a sensor reading arrives and issues actuator commands.
 
 Decision logic per zone (evaluated on every sensor reading received):
 
+0. VWC reading at or below 1 % (`VWC_MIN_VALID`) → probe treated as offline: `SENSOR_OFFLINE` alert, reading ignored, no irrigation decision taken
 1. VWC below minimum threshold within irrigation window → `IRRIGATION_ON`
 2. VWC below minimum threshold outside irrigation window → `IRRIGATION_ON` (emergency, `is_emergency=True`) + `VWC_CRITICAL_LOW` alert
 3. VWC at or above maximum threshold while irrigating → `IRRIGATION_OFF`
@@ -133,6 +134,13 @@ Decision logic per zone (evaluated on every sensor reading received):
 6. Air temperature below frost threshold → `FROST_ALERT` (CRITICAL) + `ALERT_CRITICAL` command
 
 All decisions are persisted to `irrigation_events` with a human-readable justification string.
+
+Robustness details:
+
+- The irrigation state is synchronised with the actuator state reported in each reading, so a stale in-memory flag can never block new commands
+- Watchdog: if a zone irrigates for more than `IRRIGATION_MAX_MINUTES` and VWC is still below the minimum, an `IRRIGATION_INEFFECTIVE` alert is stored (once per irrigation cycle)
+- Alerts of the same type and zone are rate-limited by `ALERT_COOLDOWN_MINUTES` (in data time)
+- Database connections are re-established automatically after a failure
 
 ### Alerter (`alerter/`)
 
@@ -163,12 +171,14 @@ All time-series tables are TimescaleDB hypertables. Compression and retention po
 | `alerts` | 1-day chunks | — | 60 days |
 | `eto_daily` | 90-day chunks | — | — |
 
-Continuous aggregates pre-compute hourly and daily rollups, making Grafana queries fast regardless of raw data volume.
+Continuous aggregates pre-compute hourly and daily rollups, making Grafana queries fast regardless of raw data volume. They use *real-time aggregation* (`materialized_only = false`): recent data that has not been materialised yet is read from the raw table at query time, so dashboards do not lag behind the data.
 
 | View | Granularity | Refresh |
 |------|-------------|---------|
-| `sensor_hourly` | 1 hour | Every 30 min |
-| `sensor_daily` | 1 day | Every 1 hour |
+| `sensor_hourly` | 1 hour | Every 30 min (+ real time) |
+| `sensor_daily` | 1 day | Every 1 hour (+ real time) |
+
+The refresh policies cover the last 7 days. If you generate a longer backfill, run `CALL refresh_continuous_aggregate('sensor_hourly', NULL, now());` (and the same for `sensor_daily`) once it has finished.
 
 ---
 
@@ -258,7 +268,22 @@ docker exec -it greenhouse_timescaledb \
   "SELECT zone_id, command, vwc_at_trigger, reason, time FROM irrigation_events ORDER BY time DESC LIMIT 10;"
 ```
 
-### 5. Simulation options
+### 5. Switching to real time and resetting data
+
+The simulator switches to real time by itself when it reaches the current time. Afterwards set `SIM_START_DAYS_AGO=0` and `TIME_SCALE=1` in `.env`, otherwise a container restart would generate the history again.
+
+To start from scratch (this deletes all stored data):
+
+```bash
+docker compose down
+docker volume rm <project>_timescale_data     # check the name with: docker volume ls
+rm -f mosquitto/data/mosquitto.db            # retained messages from the previous run
+docker compose up -d --build
+```
+
+`timescaledb/init.sql` only runs on an empty volume, which is why the volume must be removed for schema or retention changes to apply.
+
+### 6. Simulation options
 
 For simulation options, time acceleration, and extreme weather events,
 see [docs/SIMULATION.md](docs/SIMULATION.md).
@@ -275,7 +300,8 @@ All parameters are injected via environment variables. See `example.env` for the
 | `SIM_START_DAYS_AGO` | `0` | Days of history to generate at startup |
 | `PUBLISH_INTERVAL_SEC` | `600` | Seconds of data-time between readings |
 | `IRRIGATION_MAX_MINUTES` | `180` | Warn if irrigating this long without VWC recovering |
-| `EXTREME_EVENT_PROBABILITY` | `0.02` | Per-tick probability of a weather event |
+| `EXTREME_EVENT_PROBABILITY` | `0.02` | Probability per zone and simulated hour of starting a weather event |
+| `VWC_MIN_VALID` | `1.0` | VWC readings at or below this value are treated as a faulty probe |
 | `ALERT_COOLDOWN_MINUTES` | `30` | Alert deduplication window |
 | `ALTITUDE_M` | `50.0` | Site altitude for ETo psychrometric constant |
 | `SUNRISE_HOUR` / `SUNSET_HOUR` | `7` / `20` | Solar cycle window |
@@ -287,6 +313,16 @@ All parameters are injected via environment variables. See `example.env` for the
 | `ZONE_X_IRRIGATION_START/END` | zone-specific | Daytime irrigation window (hour) |
 
 Zone thresholds for all three zones are fully configurable without code changes. Notification channels (webhook, email) activate automatically when their variables are set.
+
+---
+
+## Scope and Digital-Twin Readiness
+
+What the project demonstrates: telemetry ingestion, validation, configurable control rules, a closed command loop (commands change the readings that follow), traceable decisions and historical monitoring, all without hardware.
+
+What it does not demonstrate: irrigation accuracy, water savings, yield or field reliability. Crop parameters and the ETo calculation are simulation parameters, not calibrated or agronomically validated.
+
+It is a *digital-twin-ready simulation testbed*, not yet a digital twin: there is no physical asset, the model is not calibrated against real measurements and it is not used predictively. Replacing the simulator with real sensors on the same topics would be the first step.
 
 ---
 
@@ -308,6 +344,10 @@ Zone thresholds for all three zones are fully configurable without code changes.
 ## Roadmap / Extensions
 
 
+- [ ] **Digital twin**: connect real sensors through the same MQTT topics, calibrate the soil/ET model against measurements and use it predictively
+- [ ] **Persist simulator state** across restarts (currently moisture resets to its initial values)
+- [ ] **Irrigation metrics**: store `duration_sec` and `liters_est` on `IRRIGATION_OFF` (the duration and litres panels rely on them)
+- [ ] **Alerter**: ignore stale alerts (backfill) and use data time for the cooldown
 - [ ] **Fertigation**: Add EC (electrical conductivity) sensor and nutrient dosing control
 - [ ] **Weather forecast**: Integrate AEMET API to pre-irrigate before high-ET days
 - [ ] **ML anomaly detection**: Detect sensor drift or pipe leaks from VWC pattern changes
