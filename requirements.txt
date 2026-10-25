@@ -1,14 +1,13 @@
 # GreenhouseBrain — Python Dependencies
-# Instalar con: pip install -r requirements.txt
 # Python 3.11+
 
-# MQTT Client — comunicación con Mosquitto broker
+# MQTT Client — Mosquitto broker
 paho-mqtt==2.1.0
 
 # PostgreSQL / TimescaleDB driver
 psycopg2-binary==2.9.9
 
-# Para desarrollo local y tests
+# local dev and test
 python-dotenv==1.0.1
 pytest==8.2.0
 pytest-asyncio==0.23.6
