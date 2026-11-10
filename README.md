@@ -377,15 +377,6 @@ It is a *digital-twin-ready simulation testbed*, not yet a digital twin: there i
 
 ---
 
-## Further Reading
-
-- [Simulation guide](docs/SIMULATION.md) — time acceleration, solar cycle,
-  extreme weather events, and sensor payload reference
-- [Agronomic and physics models](docs/MODELS.md) — per-zone crop parameters,
-  ET drain model, and FAO-56 Penman-Monteith implementation
-
----
-
 ## Tests
 
 Unit tests run without Docker, MQTT or a database (everything external is mocked):
@@ -397,3 +388,14 @@ pytest
 
 They cover payload validation, the ETo maths, the controller decision rules,
 alert deduplication and the simulator→processor payload contract.
+
+---
+
+## Further Reading
+
+- [Simulation guide](docs/SIMULATION.md) — time acceleration, solar cycle,
+  extreme weather events, and sensor payload reference
+- [Agronomic and physics models](docs/MODELS.md) — per-zone crop parameters,
+  ET drain model, and FAO-56 Penman-Monteith implementation
+
+---

@@ -7,7 +7,6 @@ import pytest
 import greenhouse_sim as s
 from schemas import SensorPayload
 
-
 def test_no_radiation_at_night_and_peak_at_midday():
     assert s.solar_radiation(2) == 0.0
     noon = (s.SUNRISE_HOUR + s.SUNSET_HOUR) / 2
