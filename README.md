@@ -385,3 +385,15 @@ It is a *digital-twin-ready simulation testbed*, not yet a digital twin: there i
   ET drain model, and FAO-56 Penman-Monteith implementation
 
 ---
+
+## Tests
+
+Unit tests run without Docker, MQTT or a database (everything external is mocked):
+
+```bash
+pip install -r requirements.txt
+pytest
+```
+
+They cover payload validation, the ETo maths, the controller decision rules,
+alert deduplication and the simulator→processor payload contract.
