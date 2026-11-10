@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 
 from conftest import commands_sent
 
-
 def run(c, client, zone):
     c.evaluate_zone(client, zone)
     return commands_sent(client)

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 import alerter as a
 
 ALERT = {"ts": "2026-06-15T04:00:00+00:00", "zone_id": "zone_a",

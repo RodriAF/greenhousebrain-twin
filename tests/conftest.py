@@ -60,3 +60,4 @@ def commands_sent(client):
         if topic.endswith("/commands"):
             out.append(json.loads(body)["command"])
     return out
+

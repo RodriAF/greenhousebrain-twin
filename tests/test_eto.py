@@ -2,7 +2,6 @@
 from datetime import date
 
 import pytest
-
 import processor as p
 
 

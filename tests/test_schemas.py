@@ -57,3 +57,4 @@ def test_alert_validation():
         AlertPayload.model_validate({**ok, "alert_type": "UFO"})
     with pytest.raises(ValidationError):
         AlertPayload.model_validate({**ok, "value": float("nan")})
+
